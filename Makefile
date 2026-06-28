@@ -1,2 +1,2 @@
 all:
-	g++ -std=c++23 -o main main.cpp
+	g++ -o main main.cpp -lz -lSDL2

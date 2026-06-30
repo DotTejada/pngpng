@@ -116,7 +116,7 @@ u8 recon(u8 filter_type, u8 x, u8 a, u8 b, u8 c) {
 }
 
 int main() {
-    ifstream file("ff.png");
+    ifstream file("lime.png");
 
     if (!file.is_open()) {
         cerr << "Error opening file!" << endl;
@@ -144,13 +144,7 @@ int main() {
     }
     vector<char> chunk_type(4);
     if (file.read(chunk_type.data(), 4)) {
-        cout << "CHUNK_TYPE: " << endl;
-        for (int i = 0; i < chunk_type.size(); i++) {
-            printf("%02X ", (u8)chunk_type[i]);
-        }
-        cout << endl;
-        printf("%s", chunk_type.data());
-        cout << endl;
+        cout << "CHUNK_TYPE: " << chunk_type.data() << endl;
     } else {
         cerr << "FAILED TO READ CHUNK_TYPE" << endl;
         return 1;
@@ -167,7 +161,7 @@ int main() {
         cerr << "FAILED TO READ CHUNK_DATA" << endl;
         return 1;
     }
-    size_t offset;
+    size_t offset = 0;
     u32 width;
     memcpy(&width, chunk_data.data(), sizeof(width));
     width = byteswap(width);
@@ -177,8 +171,8 @@ int main() {
     u32 height;
     memcpy(&height, chunk_data.data() + offset, sizeof(height));
     height = byteswap(height);
-    offset += sizeof(height);
     cout << "HEIGHT: " << height << endl;
+    offset += sizeof(height);
 
     u8 bit_depth;
     memcpy(&bit_depth, chunk_data.data() + offset, sizeof(bit_depth));
@@ -189,6 +183,27 @@ int main() {
     memcpy(&color_type, chunk_data.data() + offset, sizeof(color_type));
     cout << "COLOR_TYPE: " << (unsigned short)color_type << endl;
     offset += sizeof(color_type);
+    int bpp;
+    switch (color_type) {
+        case 0:
+            bpp = 1;
+            break;
+        case 2:
+            bpp = 3;
+            break;
+        case 3:
+            bpp = 1;
+            break;
+        case 4:
+            bpp = 2;
+            break;
+        case 6:
+            bpp = 4;
+            break;
+        default:
+            bpp = 3;
+            break;
+    }
 
     u8 compression_method;
     memcpy(&compression_method, chunk_data.data() + offset, sizeof(compression_method));
@@ -294,7 +309,7 @@ int main() {
         }
     }
 
-    vector<u8> zlib_output(height * ((width * 3) + 1));
+    vector<u8> zlib_output(height * ((width * bpp) + 1));
     z_stream infstream;
     infstream.zalloc = Z_NULL;
     infstream.zfree = Z_NULL;
@@ -310,13 +325,13 @@ int main() {
 
     u8 filter_type, x, a, b, c;
     for (int i = 0; i < height; i++) {
-        int h = ((width * 3) + 1);
+        int h = ((width * bpp) + 1);
         filter_type = (u8)zlib_output[i * h];
-        for (int j = 1; j < (width * 3) + 1; j++) {
+        for (int j = 1; j < (width * bpp) + 1; j++) {
             x = (u8)zlib_output[j + (i * h)];
-            a = (j - 3) >= 1 ? (u8)zlib_output[(j - 3) + (i * h)] : 0;
+            a = (j - bpp) >= 1 ? (u8)zlib_output[(j - bpp) + (i * h)] : 0;
             b = (i - 1) >= 0 ? (u8)zlib_output[j + ((i - 1) * h)] : 0;
-            c = ((j - 3) >= 1 && (i - 1) >= 0) ? (u8)zlib_output[(j - 3) + ((i - 1) * h)] : 0;
+            c = ((j - bpp) >= 1 && (i - 1) >= 0) ? (u8)zlib_output[(j - bpp) + ((i - 1) * h)] : 0;
             zlib_output[j + (i * h)] = recon(filter_type, x, a, b, c);
         }
     }
@@ -345,15 +360,40 @@ int main() {
     SDL_SetRenderDrawColor(renderer, 12, 12, 12, 255);
     SDL_RenderClear(renderer);
 
-    for (int i = 0; i < height; i++) {
-        for (int j = 1; j < (width * 3) + 1; j += 3) {
-            int offset = (i * ((width * 3) + 1)) + j;
-            u8 r = (u8)zlib_output[offset];
-            u8 g = (u8)zlib_output[offset + 1];
-            u8 b = (u8)zlib_output[offset + 2];
-            SDL_SetRenderDrawColor(renderer, r, g, b, 255);
-            SDL_RenderDrawPoint(renderer, (j - 1) / 3, i);
-        }
+    switch (color_type) {
+        case 0:
+            break;
+        case 2:
+            for (int i = 0; i < height; i++) {
+                for (int j = 1; j < (width * bpp) + 1; j += bpp) {
+                    int offset = (i * ((width * bpp) + 1)) + j;
+                    u8 r = (u8)zlib_output[offset];
+                    u8 g = (u8)zlib_output[offset + 1];
+                    u8 b = (u8)zlib_output[offset + 2];
+                    SDL_SetRenderDrawColor(renderer, r, g, b, 255);
+                    SDL_RenderDrawPoint(renderer, (j - 1) / bpp, i);
+                }
+            }
+            break;
+        case 3:
+            break;
+        case 4:
+            break;
+        case 6:
+            for (int i = 0; i < height; i++) {
+                for (int j = 1; j < (width * bpp) + 1; j += bpp) {
+                    int offset = (i * ((width * bpp) + 1)) + j;
+                    u8 r = (u8)zlib_output[offset];
+                    u8 g = (u8)zlib_output[offset + 1];
+                    u8 b = (u8)zlib_output[offset + 2];
+                    u8 a = (u8)zlib_output[offset + 3];
+                    SDL_SetRenderDrawColor(renderer, r, g, b, a);
+                    SDL_RenderDrawPoint(renderer, (j - 1) / bpp, i);
+                }
+            }
+            break;
+        default:
+            break;
     }
 
     SDL_RenderPresent(renderer);

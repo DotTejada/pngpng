@@ -67,17 +67,17 @@ unsigned long crc(u8 *buf, int len) {
 }
 
 u8 paeth_predictor(u8 a, u8 b, u8 c) {
-    u8 p, pa, pb, pc;
-    p = a + b - c;
-    pa = abs(p - a);
-    pb = abs(p - b);
-    pc = abs(p - c);
+    int p, pa, pb, pc;
+    p = (int)a + (int)b - (int)c;
+    pa = abs(p - (int)a);
+    pb = abs(p - (int)b);
+    pc = abs(p - (int)c);
     if (pa <= pb && pa <= pc) {
-        return a;
+        return (u8)a;
     } else if (pb <= pc) {
-        return b;
+        return (u8)b;
     } else {
-        return c;
+        return (u8)c;
     }
 }
 
@@ -220,7 +220,7 @@ int main() {
     vector<char> crc_vec = chunk_type;
     crc_vec.insert(crc_vec.end(), chunk_data.begin(), chunk_data.end());
     unsigned long crc_calc = crc((u8*)crc_vec.data(), crc_vec.size());
-    printf("CRC_CALC: %X\n", crc_calc);
+    printf("CRC_CALC: %lX\n", crc_calc);
 
     u32 crc_real;
     if (file.read(reinterpret_cast<char*>(&crc_real), 4)) {
@@ -294,7 +294,7 @@ int main() {
         }
     }
 
-    vector<char> zlib_output(height * ((width * 3) + 1));
+    vector<u8> zlib_output(height * ((width * 3) + 1));
     z_stream infstream;
     infstream.zalloc = Z_NULL;
     infstream.zfree = Z_NULL;
@@ -313,14 +313,12 @@ int main() {
         int h = ((width * 3) + 1);
         filter_type = (u8)zlib_output[i * h];
         for (int j = 1; j < (width * 3) + 1; j++) {
-            x = zlib_output[j + (i * h)];
-            a = (j - 3) >= 1 ? zlib_output[(j - 3) + (i * h)] : 0;
-            b = (i - 1) >= 0 ? zlib_output[j + ((i - 1) * h)] : 0;
-            c = ((j - 3) >= 1 && (i - 1) >= 0) ? zlib_output[(j - 3) + ((i - 1) * h)] : 0;
+            x = (u8)zlib_output[j + (i * h)];
+            a = (j - 3) >= 1 ? (u8)zlib_output[(j - 3) + (i * h)] : 0;
+            b = (i - 1) >= 0 ? (u8)zlib_output[j + ((i - 1) * h)] : 0;
+            c = ((j - 3) >= 1 && (i - 1) >= 0) ? (u8)zlib_output[(j - 3) + ((i - 1) * h)] : 0;
             zlib_output[j + (i * h)] = recon(filter_type, x, a, b, c);
-            //printf("%d ", (u8)zlib_output[j + (i * h)]);
         }
-        //cout << endl;
     }
     cout << "DECODING SUCCESSFUL" << endl;
 
@@ -350,9 +348,9 @@ int main() {
     for (int i = 0; i < height; i++) {
         for (int j = 1; j < (width * 3) + 1; j += 3) {
             int offset = (i * ((width * 3) + 1)) + j;
-            u8 r = zlib_output[offset];
-            u8 g = zlib_output[offset + 1];
-            u8 b = zlib_output[offset + 2];
+            u8 r = (u8)zlib_output[offset];
+            u8 g = (u8)zlib_output[offset + 1];
+            u8 b = (u8)zlib_output[offset + 2];
             SDL_SetRenderDrawColor(renderer, r, g, b, 255);
             SDL_RenderDrawPoint(renderer, (j - 1) / 3, i);
         }

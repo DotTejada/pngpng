@@ -116,7 +116,7 @@ u8 recon(u8 filter_type, u8 x, u8 a, u8 b, u8 c) {
 }
 
 int main() {
-    ifstream file("lime.png");
+    ifstream file("basn4a08.png");
 
     if (!file.is_open()) {
         cerr << "Error opening file!" << endl;
@@ -362,6 +362,14 @@ int main() {
 
     switch (color_type) {
         case 0:
+            for (int i = 0; i < height; i++) {
+                for (int j = 1; j < (width * bpp) + 1; j += bpp) {
+                    int offset = (i * ((width * bpp) + 1)) + j;
+                    u8 grey = (u8)zlib_output[offset];
+                    SDL_SetRenderDrawColor(renderer, grey, grey, grey, 255);
+                    SDL_RenderDrawPoint(renderer, (j - 1) / bpp, i);
+                }
+            }
             break;
         case 2:
             for (int i = 0; i < height; i++) {
@@ -378,6 +386,15 @@ int main() {
         case 3:
             break;
         case 4:
+            for (int i = 0; i < height; i++) {
+                for (int j = 1; j < (width * bpp) + 1; j += bpp) {
+                    int offset = (i * ((width * bpp) + 1)) + j;
+                    u8 grey = (u8)zlib_output[offset];
+                    u8 alpha = ((u8)zlib_output[offset + 1] == grey) ? 0 : 255;
+                    SDL_SetRenderDrawColor(renderer, grey, grey, grey, alpha);
+                    SDL_RenderDrawPoint(renderer, (j - 1) / bpp, i);
+                }
+            }
             break;
         case 6:
             for (int i = 0; i < height; i++) {

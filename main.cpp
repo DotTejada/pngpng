@@ -115,8 +115,14 @@ u8 recon(u8 filter_type, u8 x, u8 a, u8 b, u8 c) {
     }
 }
 
-int main() {
-    ifstream file("basn4a08.png");
+int main(int argc, char* argv[]) {
+
+    if (argc < 2) {
+        cerr << "Not enough args" << endl;
+        return 1;
+    }
+
+    ifstream file(argv[1]);
 
     if (!file.is_open()) {
         cerr << "Error opening file!" << endl;
@@ -254,6 +260,8 @@ int main() {
     }
 
     vector<char> zlib_input;
+    u8 plte[256 * 3];
+    bool plte_found = false;
     while(true) {
         cout << "==================" << endl;
         if (file.read(reinterpret_cast<char*>(&length), 4)) {
@@ -302,7 +310,27 @@ int main() {
 
         if (ct == "IDAT") {
             zlib_input.insert(zlib_input.end(), chunk_data.begin(), chunk_data.end());
+        } else if (ct == "PLTE") {
+            if (!plte_found) {
+                plte_found = true;
+            } else {
+                cerr << "More than one PLTE chunk found" << endl;
+                return 1;
+            }
+            if (length % 3 != 0) {
+                cerr << "PLTE length not divisible by 3" << endl;
+                return 1;
+            }
+            if (color_type != 3) {
+                cerr << "PLTE chunk not expected for this color type" << endl;
+                return 1;
+            }
+            memcpy(plte, chunk_data.data(), length);
         } else if (ct == "IEND") {
+            if (color_type == 3 && !plte_found) {
+                cerr << "PLTE chunk expected by not found for color type 3" << endl;
+                return 1;
+            }
             break;
         } else {
             continue;
@@ -384,6 +412,17 @@ int main() {
             }
             break;
         case 3:
+            for (int i = 0; i < height; i++) {
+                for (int j = 1; j < (width * bpp) + 1; j += bpp) {
+                    int offset = (i * ((width * bpp) + 1)) + j;
+                    int index = zlib_output[offset] * 3;
+                    u8 r = plte[index];
+                    u8 g = plte[index + 1];
+                    u8 b = plte[index + 2];
+                    SDL_SetRenderDrawColor(renderer, r, g, b, 255);
+                    SDL_RenderDrawPoint(renderer, (j - 1) / bpp, i);
+                }
+            }
             break;
         case 4:
             for (int i = 0; i < height; i++) {

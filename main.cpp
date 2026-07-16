@@ -94,7 +94,8 @@ u8 filt(u8 filter_type, u8 x, u8 a, u8 b, u8 c) {
     case 4:
         return x - paeth_predictor(a, b, c);
     default:
-        return x;
+        cerr << "Invalid filter type, should be 0, 1, 2, 3, or 4" << endl;
+        exit(1);
     }
 }
 
@@ -111,7 +112,8 @@ u8 recon(u8 filter_type, u8 x, u8 a, u8 b, u8 c) {
     case 4:
         return x + paeth_predictor(a, b, c);
     default:
-        return x;
+        cerr << "Invalid filter type, should be 0, 1, 2, 3, or 4" << endl;
+        exit(1);
     }
 }
 
@@ -184,6 +186,10 @@ int main(int argc, char* argv[]) {
     memcpy(&bit_depth, chunk_data.data() + offset, sizeof(bit_depth));
     cout << "BIT_DEPTH: " << (unsigned short)bit_depth << endl;
     offset += sizeof(bit_depth);
+    if (bit_depth == 0) {
+        cerr << "Bit depth shouldn't be 0" << endl;
+        return 1;
+    }
 
     u8 color_type;
     memcpy(&color_type, chunk_data.data() + offset, sizeof(color_type));
@@ -192,23 +198,43 @@ int main(int argc, char* argv[]) {
     int bpp;
     switch (color_type) {
         case 0:
+            if ((bit_depth & (bit_depth - 1)) != 0 || bit_depth > 16) {
+                cerr << "Bit depth for color type " << color_type << " should be 1, 2, 4, 8, or 16, not " << bit_depth << endl;
+                return 1;
+            }
             bpp = 1;
             break;
         case 2:
+            if (bit_depth != 8 && bit_depth != 16) {
+                cerr << "Bit depth for color type " << color_type << " should be 8 or 16, not " << bit_depth << endl;
+                return 1;
+            }
             bpp = 3;
             break;
         case 3:
+            if ((bit_depth & (bit_depth - 1)) != 0 || bit_depth > 8) {
+                cerr << "Bit depth for color type " << color_type << " should be 1, 2, 4, or 8, not " << bit_depth << endl;
+                return 1;
+            }
             bpp = 1;
             break;
         case 4:
+            if (bit_depth != 8 && bit_depth != 16) {
+                cerr << "Bit depth for color type " << color_type << " should be 8 or 16, not " << bit_depth << endl;
+                return 1;
+            }
             bpp = 2;
             break;
         case 6:
+            if (bit_depth != 8 && bit_depth != 16) {
+                cerr << "Bit depth for color type " << color_type << " should be 8 or 16, not " << bit_depth << endl;
+                return 1;
+            }
             bpp = 4;
             break;
         default:
-            bpp = 3;
-            break;
+            cerr << "Color type should be 0, 2, 3, 4 or 6, not " << color_type << endl;
+            return 1;
     }
 
     u8 compression_method;
@@ -337,7 +363,8 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    vector<u8> zlib_output(height * ((width * bpp) + 1));
+    int width_bytes = (((width * bpp * bit_depth) + 7) >> 3) + 1;
+    vector<u8> zlib_output(height * width_bytes);
     z_stream infstream;
     infstream.zalloc = Z_NULL;
     infstream.zfree = Z_NULL;
@@ -351,16 +378,24 @@ int main(int argc, char* argv[]) {
     inflate(&infstream, Z_NO_FLUSH);
     inflateEnd(&infstream);
 
+    // filtering
     u8 filter_type, x, a, b, c;
+    int filter_bytes;
+    if (bit_depth == 16) {
+        filter_bytes = bpp * 2;
+    } else if (bit_depth == 8) {
+        filter_bytes = bpp;
+    } else { // bit_depth < 8
+        filter_bytes = 1;
+    }
     for (int i = 0; i < height; i++) {
-        int h = ((width * bpp) + 1);
-        filter_type = (u8)zlib_output[i * h];
-        for (int j = 1; j < (width * bpp) + 1; j++) {
-            x = (u8)zlib_output[j + (i * h)];
-            a = (j - bpp) >= 1 ? (u8)zlib_output[(j - bpp) + (i * h)] : 0;
-            b = (i - 1) >= 0 ? (u8)zlib_output[j + ((i - 1) * h)] : 0;
-            c = ((j - bpp) >= 1 && (i - 1) >= 0) ? (u8)zlib_output[(j - bpp) + ((i - 1) * h)] : 0;
-            zlib_output[j + (i * h)] = recon(filter_type, x, a, b, c);
+        filter_type = (u8)zlib_output[i * width_bytes];
+        for (int j = 1; j < width_bytes; j++) {
+            x = (u8)zlib_output[j + (i * width_bytes)];
+            a = (j - filter_bytes) >= 1 ? (u8)zlib_output[(j - filter_bytes) + (i * width_bytes)] : 0;
+            b = (i - 1) >= 0 ? (u8)zlib_output[j + ((i - 1) * width_bytes)] : 0;
+            c = ((j - filter_bytes) >= 1 && (i - 1) >= 0) ? (u8)zlib_output[(j - filter_bytes) + ((i - 1) * width_bytes)] : 0;
+            zlib_output[j + (i * width_bytes)] = recon(filter_type, x, a, b, c);
         }
     }
     cout << "DECODING SUCCESSFUL" << endl;
@@ -388,40 +423,105 @@ int main(int argc, char* argv[]) {
     SDL_SetRenderDrawColor(renderer, 12, 12, 12, 255);
     SDL_RenderClear(renderer);
 
+    // drawing
     switch (color_type) {
         case 0:
-            for (int i = 0; i < height; i++) {
-                for (int j = 1; j < (width * bpp) + 1; j += bpp) {
-                    int offset = (i * ((width * bpp) + 1)) + j;
-                    u8 grey = (u8)zlib_output[offset];
-                    SDL_SetRenderDrawColor(renderer, grey, grey, grey, 255);
-                    SDL_RenderDrawPoint(renderer, (j - 1) / bpp, i);
+            if (bit_depth == 16) {
+            } else if (bit_depth == 8) {
+                for (int i = 0; i < height; i++) {
+                    for (int j = 1; j < (width * bpp) + 1; j += bpp) {
+                        int offset = (i * ((width * bpp) + 1)) + j;
+                        u8 grey = (u8)zlib_output[offset];
+                        SDL_SetRenderDrawColor(renderer, grey, grey, grey, 255);
+                        SDL_RenderDrawPoint(renderer, (j - 1) / bpp, i);
+                    }
+                }
+            } else {
+                int counter = 0;
+                u8 mask, byte, r, g, b;
+                mask = (1 << bit_depth) - 1;
+                for (int i = 0; i < height; i++) {
+                    counter = 0;
+                    for (int j = 1; j < width_bytes; j++) {
+                        int offset = (i * width_bytes) + j;
+                        byte = (u8)zlib_output[offset];
+                        for (int bits = bit_depth; bits <= 8; bits += bit_depth) {
+                            if (counter == 0) {
+                                r = (byte >> (8 - bits)) & mask;
+                                counter += 1;
+                            } else if (counter == 1) {
+                                g = (byte >> (8 - bits)) & mask;
+                                counter += 1;
+                            } else if (counter == 2) {
+                                b = (byte >> (8 - bits)) & mask;
+                                counter += 1;
+                            } else {
+                                SDL_SetRenderDrawColor(renderer, r, g, b, 255);
+                                SDL_RenderDrawPoint(renderer, (j - 1) / bpp, i);
+                                counter = 0;
+                            }
+                        }
+                    }
                 }
             }
             break;
         case 2:
-            for (int i = 0; i < height; i++) {
-                for (int j = 1; j < (width * bpp) + 1; j += bpp) {
-                    int offset = (i * ((width * bpp) + 1)) + j;
-                    u8 r = (u8)zlib_output[offset];
-                    u8 g = (u8)zlib_output[offset + 1];
-                    u8 b = (u8)zlib_output[offset + 2];
-                    SDL_SetRenderDrawColor(renderer, r, g, b, 255);
-                    SDL_RenderDrawPoint(renderer, (j - 1) / bpp, i);
+            if (bit_depth == 16) {
+            } else if (bit_depth == 8) {
+                for (int i = 0; i < height; i++) {
+                    for (int j = 1; j < (width * bpp) + 1; j += bpp) {
+                        int offset = (i * ((width * bpp) + 1)) + j;
+                        u8 r = (u8)zlib_output[offset];
+                        u8 g = (u8)zlib_output[offset + 1];
+                        u8 b = (u8)zlib_output[offset + 2];
+                        SDL_SetRenderDrawColor(renderer, r, g, b, 255);
+                        SDL_RenderDrawPoint(renderer, (j - 1) / bpp, i);
+                    }
+                }
+            } else {
+                int counter = 0;
+                u8 mask, byte, r, g, b;
+                mask = (1 << bit_depth) - 1;
+                for (int i = 0; i < height; i++) {
+                    counter = 0;
+                    for (int j = 1; j < width_bytes; j++) {
+                        int offset = (i * width_bytes) + j;
+                        byte = (u8)zlib_output[offset];
+                        for (int bits = bit_depth; bits <= 8; bits += bit_depth) {
+                            if (counter == 0) {
+                                r = (byte >> (8 - bits)) & mask;
+                                counter += 1;
+                            } else if (counter == 1) {
+                                g = (byte >> (8 - bits)) & mask;
+                                counter += 1;
+                            } else if (counter == 2) {
+                                b = (byte >> (8 - bits)) & mask;
+                                counter += 1;
+                            } else {
+                                SDL_SetRenderDrawColor(renderer, r, g, b, 255);
+                                SDL_RenderDrawPoint(renderer, (j - 1) / bpp, i);
+                                counter = 0;
+                            }
+                        }
+                    }
                 }
             }
             break;
         case 3:
-            for (int i = 0; i < height; i++) {
-                for (int j = 1; j < (width * bpp) + 1; j += bpp) {
-                    int offset = (i * ((width * bpp) + 1)) + j;
-                    int index = zlib_output[offset] * 3;
-                    u8 r = plte[index];
-                    u8 g = plte[index + 1];
-                    u8 b = plte[index + 2];
-                    SDL_SetRenderDrawColor(renderer, r, g, b, 255);
-                    SDL_RenderDrawPoint(renderer, (j - 1) / bpp, i);
+            if (bit_depth == 16) {
+            } else if (bit_depth == 8) {
+                for (int i = 0; i < height; i++) {
+                    for (int j = 1; j < (width * bpp) + 1; j += bpp) {
+                        int offset = (i * ((width * bpp) + 1)) + j;
+                        int index = zlib_output[offset] * 3;
+                        u8 r = plte[index];
+                        u8 g = plte[index + 1];
+                        u8 b = plte[index + 2];
+                        SDL_SetRenderDrawColor(renderer, r, g, b, 255);
+                        SDL_RenderDrawPoint(renderer, (j - 1) / bpp, i);
+                    }
                 }
+            } else {
             }
             break;
         case 4:
